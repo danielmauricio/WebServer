@@ -84,13 +84,13 @@ void* web(void* fd_t) {
     }
     //sleep(1);
     close(fd);
-  //  exit(1);
+    //  exit(1);
     return NULL;
 }
 
 int main(int argc, char **argv) {
-    int i, port, listenfd,threadLength;
-    int socketfd =NULL;
+    int  port, listenfd,threadLength;
+    int socketfd;
     socklen_t length;
     static struct sockaddr_in cli_addr;
     static struct sockaddr_in serv_addr;
@@ -106,9 +106,9 @@ int main(int argc, char **argv) {
 
     (void)signal(SIGCLD, SIG_IGN);
     (void)signal(SIGHUP, SIG_IGN);
-    for(i=0;i<32;i++)
-        (void)close(i);
-    (void)setpgrp();
+//    for(i=0;i<32;i++)
+    //       (void)close(i);
+//    (void)setpgrp();
 
     printf("\nCorriendo el webserver...\n");
 
@@ -118,13 +118,13 @@ int main(int argc, char **argv) {
     threadLength = atoi(argv[2]);
     pthread_t  threads[threadLength];
     int busyThreads[threadLength];
-    /*int k;
+    int k;
 
     for (k=0; k< threadLength; k++) {
         busyThreads[k]=0;
-        pthread_create(&threads[k],NULL,web,(void*)&socketfd);
+//        pthread_create(&threads[k],NULL,web,(void*)&socketfd);
     }
-*/
+
 
     printf("\n %d hilos creados \n",threadLength);
 
@@ -142,29 +142,35 @@ int main(int argc, char **argv) {
         if((socketfd = accept(listenfd, (struct sockaddr *)&cli_addr, &length)) < 0) {
             printf("\nerror de accept\n");
         }
-        (void)close(listenfd);
-    //     web(socketfd);
-        /*
+        else {
+            printf("me conect'e");
+            //(void) close(listenfd);
+            //       web(socketfd);
+            /*
          * VERIFICAR QUE LA COLA ESTE VACIA
          *
          * */
-        int available=-1;
-        int u;
-        for (u = 0; u < threadLength;u++) {
-            if (busyThreads[u] == 0) {
-                available = 1;
-                break;
+
+            int available = -1;
+            int u;
+            for (u = 0; u < threadLength; u++) {
+                if (busyThreads[u] == 0) {
+                    available = 1;
+                    break;
+                }
             }
-        }
-        if(available==-1) {
-            printf("\nNo hay hilos disponibles\n");
-            exit(0);
-        }
-        else{
-            printf("\nse correra el hilo: %d\n",available);
-            pthread_create(&threads[available],NULL,web,(void*)&socketfd);
-            pthread_join(threads[available],NULL);
-            return 0;
+            if (available == -1) {
+                printf("\nNo hay hilos disponibles\n");
+                exit(0);
+            }
+            else {
+                printf("\nse correra el hilo: %d\n", available);
+                int temp = socketfd;
+                // web(socketfd);
+                pthread_create(&threads[available], NULL, web, (void *) &temp);
+                pthread_join(threads[available],NULL);
+            }
+
         }
 
     }
