@@ -35,7 +35,6 @@ struct {
         {0,0} };
 
 void* web(void* fd_t) {
-    printf("hola");
     int fd = *((int*)fd_t);
     int file_fd, buflen;
     long i, ret, len;
@@ -137,13 +136,16 @@ int main(int argc, char **argv) {
         printf("\nerror de bind\n");
     if( listen(listenfd,64) <0)
         printf("\nerror de listen\n");
+    int available;
+    int lastsocked=-2;
     for(;;) {
+        sleep(1);
         length = sizeof(cli_addr);
         if((socketfd = accept(listenfd, (struct sockaddr *)&cli_addr, &length)) < 0) {
             printf("\nerror de accept\n");
         }
-        else {
-            printf("me conect'e");
+        else if(lastsocked != socketfd) {
+            lastsocked = socketfd;
             //(void) close(listenfd);
             //       web(socketfd);
             /*
@@ -151,24 +153,25 @@ int main(int argc, char **argv) {
          *
          * */
 
-            int available = -1;
+            available = -1;
             int u;
-            for (u = 0; u < threadLength; u++) {
+            for (u = 0; u < threadLength && available==-1; u++) {
                 if (busyThreads[u] == 0) {
-                    available = 1;
+                    available = u;
+                    busyThreads[u]=1;
                     break;
-                }
-            }
+                }            }
             if (available == -1) {
                 printf("\nNo hay hilos disponibles\n");
+                close(socketfd);
                 exit(0);
             }
             else {
-                printf("\nse correra el hilo: %d\n", available);
+                printf("\nse correra el hilo: %d\n", available+1);
                 int temp = socketfd;
                 // web(socketfd);
                 pthread_create(&threads[available], NULL, web, (void *) &temp);
-                pthread_join(threads[available],NULL);
+                //pthread_join(threads[available],NULL);
             }
 
         }
