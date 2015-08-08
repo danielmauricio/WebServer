@@ -1,18 +1,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <errno.h>
 #include <string.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "pthread.h"
 #define BUFSIZE 8096
 #define ERROR      42
 #define LOG        44
 #define FORBIDDEN 403
 #define NOTFOUND  404
+
+
+pthread_t  *threads = NULL;
+int *busyThreads  = NULL;
+
+struct arg_struct {
+    int id;
+    int fd;
+};
 
 struct {
     char *ext;
@@ -31,8 +40,10 @@ struct {
         {"mpg","video/mpg"},
         {0,0} };
 
-void web(int fd)
-{
+void* web(void* arguments) {
+    struct  arg_struct *args = arguments;
+    int fd =args->fd;
+    int id = args->id;
     int file_fd, buflen;
     long i, ret, len;
     char * fstr;
@@ -48,6 +59,11 @@ void web(int fd)
         if(buffer[i] == '\r' || buffer[i] == '\n')
             buffer[i]='*';
     if( strncmp(buffer,"GET ",4) && strncmp(buffer,"get ",4) ) {
+        (void)write(fd, "HTTP/1.1 403 Forbidden\nContent-Length: 185\nConnection: close\nContent-Type: text/html\n\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\nThe requested URL, file type or operation is not allowed on this webserver.\n</body></html>\n",271);
+        close(fd);
+        busyThreads[id] = 0;
+        printf("\nSe libero el hilo: %d\n",id+1);
+        return NULL;        
     }
     for(i=4;i<BUFSIZE;i++) {
         if(buffer[i] == ' ') {
@@ -65,10 +81,15 @@ void web(int fd)
             break;
         }
     }
-    if(fstr == 0);
 
-    if(( file_fd = open(&buffer[5],O_RDONLY)) == -1) {
+    if(( file_fd = open(&buffer[5],O_RDONLY)) == -1 || fstr ==0) {
+        (void)write(fd, "HTTP/1.1 404 Not Found\nContent-Length: 136\nConnection: close\nContent-Type: text/html\n\n<html><head>\n<title>404 Not Found</title>\n</head><body>\n<h1>Not Found</h1>\nThe requested URL was not found on this server.\n</body></html>\n",224);
+        close(fd);
+        busyThreads[id] = 0;
+        printf("\nSe libero el hilo: %d\n",id+1);
+        return NULL;
     }
+
     len = (long)lseek(file_fd, (off_t)0, SEEK_END);
     (void)lseek(file_fd, (off_t)0, SEEK_SET);
     (void)sprintf(buffer,"HTTP/1.1 200 OK\nServer: thread-webserver\nContent-Length: %ld\nConnection: close\nContent-Type: %s\n\n", len, fstr);
@@ -77,13 +98,15 @@ void web(int fd)
     while (	(ret = read(file_fd, buffer, BUFSIZE)) > 0 ) {
         (void)write(fd,buffer,ret);
     }
-    sleep(1);
     close(fd);
-    exit(1);
+    busyThreads[id] = 0;
+    printf("\nSe libero el hilo: %d\n",id+1);
+    return NULL;
 }
 
 int main(int argc, char **argv) {
-    int i, port, pid, listenfd,threadLength, socketfd;
+    int  port, listenfd,threadLength;
+    int socketfd;
     socklen_t length;
     static struct sockaddr_in cli_addr;
     static struct sockaddr_in serv_addr;
@@ -97,24 +120,29 @@ int main(int argc, char **argv) {
         exit(4);
     }
 
-    /* mandar procesos hijos */
-    if(fork() != 0) {
-        return 0; /* enviar Ok al shell */
-    }
-
     (void)signal(SIGCLD, SIG_IGN);
     (void)signal(SIGHUP, SIG_IGN);
-    for(i=0;i<32;i++)
-        (void)close(i);
-    (void)setpgrp();
+//    for(i=0;i<32;i++)
+    //       (void)close(i);
+//    (void)setpgrp();
 
     printf("\nCorriendo el webserver...\n");
 
     if((listenfd = socket(AF_INET, SOCK_STREAM,0)) <0)
         printf("\nerror creado el socket\n");
     port = atoi(argv[6]);
+
     threadLength = atoi(argv[2]);
-    printf("\n %d hilos creados \n",threadLength);
+
+    threads = malloc(sizeof(pthread_t)*threadLength);
+    busyThreads = malloc(sizeof(int)*threadLength);
+    int k;
+
+    for (k=0; k< threadLength; k++) {
+    }
+
+
+    printf("\n%d hilos creados \n",threadLength);
 
     if(port < 0 || port >60000)
         printf("\nerror, puerto invalido\n");
@@ -125,21 +153,35 @@ int main(int argc, char **argv) {
         printf("\nerror de bind\n");
     if( listen(listenfd,64) <0)
         printf("\nerror de listen\n");
+    int available;
     for(;;) {
         length = sizeof(cli_addr);
         if((socketfd = accept(listenfd, (struct sockaddr *)&cli_addr, &length)) < 0) {
             printf("\nerror de accept\n");
         }
-        if((pid = fork()) < 0) {
-            printf("error");
-        }
-        else {
-            if(pid == 0) {
-                (void)close(listenfd);
-                web(socketfd);
-            } else {
-                (void)close(socketfd);
+        else{
+            available = -1;
+            int u;
+            for (u = 0; u < threadLength && available==-1; u++) {
+                if (busyThreads[u] == 0) {
+                    available = u;
+                    busyThreads[u]=1;
+                    break;
+                }            }
+            if (available == -1) {
+                printf("\nNo hay hilos disponibles\n");
+                close(socketfd);
+               // exit(0);
             }
+            else {
+                printf("\nSe empezo a utilizar el hilo: %d\n", available+1);
+                struct arg_struct args;
+                args.fd=socketfd;
+                args.id= available;
+                pthread_create(&threads[available], NULL, web, (void *) &args);
+            }
+
         }
+
     }
 }
