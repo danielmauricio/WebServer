@@ -9,11 +9,6 @@
 #include <arpa/inet.h>
 #include "pthread.h"
 #define BUFSIZE 8096
-#define ERROR      42
-#define LOG        44
-#define FORBIDDEN 403
-#define NOTFOUND  404
-
 
 pthread_t  *threads = NULL;
 int *busyThreads  = NULL;
@@ -55,6 +50,7 @@ void* web(void* arguments) {
     if(ret > 0 && ret < BUFSIZE)
         buffer[ret]=0;
     else buffer[0]=0;
+
     for(i=0;i<ret;i++)
         if(buffer[i] == '\r' || buffer[i] == '\n')
             buffer[i]='*';
@@ -63,7 +59,7 @@ void* web(void* arguments) {
         close(fd);
         busyThreads[id] = 0;
         printf("\nSe libero el hilo: %d\n",id+1);
-        return NULL;        
+        return NULL;
     }
     for(i=4;i<BUFSIZE;i++) {
         if(buffer[i] == ' ') {
@@ -71,33 +67,98 @@ void* web(void* arguments) {
             break;
         }
     }
-
     buflen=strlen(buffer);
+    if(strstr(buffer,"/cgi-bin") != NULL || strstr(buffer,".cgi")){
+        char * params;
+        int paramsIndex =0;
+        const char *paramsArray[20];
+        params = strstr(buffer,"?");
+        if(params != NULL){ // posee parametros en el url
+            //Parsear url a un arreglo con los parametros.
+            char * token;
+            while((token=strsep(&params,"&")) != NULL){
+                strsep(&token,"=");
+                paramsArray[paramsIndex] = token;
+                paramsIndex++;
+            }
+        }
+        char path[buflen-2];
+        memcpy(&path[1],&buffer[4],buflen-3);
+        path[0]='.'; // path = ./Dir/exe
+        int a;
+        for(a=0;a<sizeof(path);a++){
+            if(path[a]=='?') {
+                path[a] = ' ';
+                path[a+1]=0;
+                break;
+            }
+        }
+        int p;
+        for(p=0;p<paramsIndex;p++){
+            strcat(path,paramsArray[p]);
+            strcat(path," ");
+        }
+        printf("%s",path);
+        FILE *output = popen(path,"r");
+        if (output==NULL){
+            printf("error");
+        }
+        else {
+            char* buf = malloc(200);
+
+            int c;int index=0;
+            while((c = getc(output))!= EOF){
+                buf[index++]=c;
+            }
+            // eliminar signos ireconosibles que se agregan al final.
+            buf[index]='\0';
+            char weboutput[index];
+            strncpy(weboutput,buf,index);
+            write(fd,weboutput, index);
+            pclose(output);
+
+            close(fd);
+            busyThreads[id] = 0;
+            printf("\nSe libero el hilo: %d\n",id+1);
+            return NULL;
+        }
+    }
+
+
+
     fstr = (char *)0;
     for(i=0;extensions[i].ext != 0;i++) {
         len = strlen(extensions[i].ext);
         if( !strncmp(&buffer[buflen-len], extensions[i].ext, len)) {
-            fstr =extensions[i].filetype;
-            break;
+                fstr = extensions[i].filetype;
+                break;
         }
     }
 
-    if(( file_fd = open(&buffer[5],O_RDONLY)) == -1 || fstr ==0) {
-        (void)write(fd, "HTTP/1.1 404 Not Found\nContent-Length: 136\nConnection: close\nContent-Type: text/html\n\n<html><head>\n<title>404 Not Found</title>\n</head><body>\n<h1>Not Found</h1>\nThe requested URL was not found on this server.\n</body></html>\n",224);
-        close(fd);
-        busyThreads[id] = 0;
-        printf("\nSe libero el hilo: %d\n",id+1);
-        return NULL;
-    }
 
-    len = (long)lseek(file_fd, (off_t)0, SEEK_END);
-    (void)lseek(file_fd, (off_t)0, SEEK_SET);
-    (void)sprintf(buffer,"HTTP/1.1 200 OK\nServer: thread-webserver\nContent-Length: %ld\nConnection: close\nContent-Type: %s\n\n", len, fstr);
-    (void)write(fd,buffer,strlen(buffer));
+        if ((file_fd = open(&buffer[5], O_RDONLY)) == -1) {
+            (void) write(fd,
+                         "HTTP/1.1 404 Not Found\nContent-Length: 136\nConnection: close\nContent-Type: text/html\n\n<html><head>\n<title>404 Not Found</title>\n</head><body>\n<h1>Not Found</h1>\nThe requested URL was not found on this server.\n</body></html>\n",
+                         224);
+            close(fd);
+            busyThreads[id] = 0;
+            printf("\nSe libero el hilo: %d\n", id + 1);
+            return NULL;
+        }
 
-    while (	(ret = read(file_fd, buffer, BUFSIZE)) > 0 ) {
-        (void)write(fd,buffer,ret);
-    }
+
+        len = (long) lseek(file_fd, (off_t) 0, SEEK_END);
+        (void) lseek(file_fd, (off_t) 0, SEEK_SET);
+        (void) sprintf(buffer,
+                       "HTTP/1.1 200 OK\nServer: thread-webserver\nContent-Length: %ld\nConnection: close\nContent-Type: %s\n\n",
+                       len, fstr);
+        (void) write(fd, buffer, strlen(buffer));
+
+        while ((ret = read(file_fd, buffer, BUFSIZE)) > 0) {
+            (void) write(fd, buffer, ret);
+        }
+
+
     close(fd);
     busyThreads[id] = 0;
     printf("\nSe libero el hilo: %d\n",id+1);
@@ -171,7 +232,7 @@ int main(int argc, char **argv) {
             if (available == -1) {
                 printf("\nNo hay hilos disponibles\n");
                 close(socketfd);
-               // exit(0);
+                // exit(0);
             }
             else {
                 printf("\nSe empezo a utilizar el hilo: %d\n", available+1);
