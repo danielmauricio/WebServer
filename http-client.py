@@ -1,4 +1,7 @@
-import pycurl,json
+#!/usr/bin/env python
+import pycurl,json,sys
+
+
 
 try:
     from urllib.parse import urlencode
@@ -41,8 +44,11 @@ def put_method(curl, url, field, name):
 
 
 def main():
+    arguments = sys.argv
+    if(len(arguments)>3):
+        print("La forma correcta es ./httpClient -u <url-recurso-a-obtener>")
     c = pycurl.Curl()
-    put_method(c,'http://localhost:8081/tests/testpostvars.php')
+    get_method(c,arguments[2])
     
     
 
