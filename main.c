@@ -136,7 +136,6 @@ void* web(void* arguments) {
             strcat(path,paramsArray[p]);
             strcat(path," ");
         }
-        printf("%s",path);
         FILE *output = popen(path,"r");
         if (output==NULL){
             printf("error");
@@ -238,9 +237,6 @@ int main(int argc, char **argv) {
 
     (void)signal(SIGCLD, SIG_IGN);
     (void)signal(SIGHUP, SIG_IGN);
-//    for(i=0;i<32;i++)
-    //       (void)close(i);
-//    (void)setpgrp();
 
     printf("\nCorriendo el webserver...\n");
 
@@ -255,6 +251,7 @@ int main(int argc, char **argv) {
     int k;
 
     for (k=0; k< threadLength; k++) {
+        busyThreads[k] =0;
     }
 
 
@@ -287,7 +284,7 @@ int main(int argc, char **argv) {
             if (available == -1) {
                 printf("\nNo hay hilos disponibles\n");
                 close(socketfd);
-                // exit(0);
+                 exit(0);
             }
             else {
                 printf("\nSe empezo a utilizar el hilo: %d\n", available+1);
