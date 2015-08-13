@@ -8,14 +8,18 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "pthread.h"
-#define BUFSIZE 8096
+#include "time.h"
+#define BUFSIZE     8096
 
 pthread_t  *threads = NULL;
 int *busyThreads  = NULL;
 
+
+
+// argumentos que se envian por el hilo
 struct arg_struct {
-    int id;
-    int fd;
+    int id; // id del hilo
+    int fd; // fd del request
 };
 
 struct {
@@ -26,15 +30,18 @@ struct {
         {"jpg", "image/jpg" },
         {"jpeg","image/jpeg"},
         {"png", "image/png" },
-        {"ico", "image/ico" },
-        {"zip", "image/zip" },
-        {"gz",  "image/gz"  },
-        {"tar", "image/tar" },
         {"htm", "text/html" },
         {"html","text/html" },
         {"mpg","video/mpg"},
+        {"mp4","video/mp4"},
         {0,0} };
 
+
+
+/*
+ * metodo que corre el hilo, analiza el request y envia un response, al final libera el hilo
+ *
+ * */
 void* web(void* arguments) {
     struct  arg_struct *args = arguments;
     int fd =args->fd;
@@ -45,8 +52,8 @@ void* web(void* arguments) {
     long paramPost=0;
 
     char * fstr;
-    static char buffer[BUFSIZE+1];
-    static char postVariables[BUFSIZE+1];
+    static char buffer[BUFSIZE+1]; // buffer que contiene el request
+    static char postVariables[BUFSIZE+1]; // variables del post
 
     //Recibe los parametros de entrada del Web Server
     ret =read(fd,buffer,BUFSIZE);
@@ -55,11 +62,6 @@ void* web(void* arguments) {
         //Si el metodo es POST entonces recibe las variables que desea ingresar
         paramPost = read(fd,postVariables,BUFSIZE);
     }
-
-    if(ret == 0 || ret == -1) {
-    }
-
-
     if((ret > 0 && ret < BUFSIZE) || (paramPost>0 && paramPost<BUFSIZE)){
         buffer[ret]=0;
         postVariables[paramPost]=0;
@@ -70,7 +72,7 @@ void* web(void* arguments) {
     }
 
 
-    for(i=0;i<ret;i++)
+    for(i=0;i<ret;i++) // eliminar los cambios de linea, agregando * , para despues borrarlos con mas facilidad.
         if(buffer[i] == '\r' || buffer[i] == '\n')
             buffer[i]='*';
 
@@ -96,7 +98,7 @@ void* web(void* arguments) {
     }
 
 
-    for(i=file-1;i<BUFSIZE;i++) {
+    for(i=file-1;i<BUFSIZE;i++) { // eliminar del espacio para adelante, texto basura.
         if(buffer[i] == ' ') {
             buffer[i] = 0;
             break;
@@ -106,6 +108,8 @@ void* web(void* arguments) {
     //Largo del buffer
     buflen=strlen(buffer);
 
+
+    // se reconoce como cgi si esta en la carpeta indicada o termina en .cgi
     if(strstr(buffer,"/cgi-bin") != NULL || strstr(buffer,".cgi")){
         char * params;
         int paramsIndex =0;
@@ -122,7 +126,7 @@ void* web(void* arguments) {
         }
         char path[buflen-2];
         memcpy(&path[1],&buffer[4],buflen-3);
-        path[0]='.'; // path = ./Dir/exe
+        path[0]='.'; // path = ./Dir/exe  agregar el ./ del ejecutable
         int a;
         for(a=0;a<sizeof(path);a++){
             if(path[a]=='?') {
@@ -132,10 +136,13 @@ void* web(void* arguments) {
             }
         }
         int p;
+        // agregar los parametros
         for(p=0;p<paramsIndex;p++){
             strcat(path,paramsArray[p]);
             strcat(path," ");
         }
+
+        // llamada para ejecutar el cgi
         FILE *output = popen(path,"r");
         if (output==NULL){
             printf("error");
@@ -151,9 +158,11 @@ void* web(void* arguments) {
             buf[index]='\0';
             char weboutput[index];
             strncpy(weboutput,buf,index);
+            // escribir la salida
             write(fd,weboutput, index);
             pclose(output);
 
+            //cerrar
             close(fd);
             busyThreads[id] = 0;
             printf("\nSe libero el hilo: %d\n",id+1);
@@ -162,7 +171,7 @@ void* web(void* arguments) {
     }
 
 
-
+// verificar si se posee la extension dada
     fstr = (char *)0;
     for(i=0;extensions[i].ext != 0;i++) {
         len = strlen(extensions[i].ext);
@@ -222,6 +231,7 @@ void* web(void* arguments) {
 int main(int argc, char **argv) {
     int  port, listenfd,threadLength;
     int socketfd;
+    time_t time;
     socklen_t length;
     static struct sockaddr_in cli_addr;
     static struct sockaddr_in serv_addr;
@@ -238,8 +248,6 @@ int main(int argc, char **argv) {
     (void)signal(SIGCLD, SIG_IGN);
     (void)signal(SIGHUP, SIG_IGN);
 
-    printf("\nCorriendo el webserver...\n");
-
     if((listenfd = socket(AF_INET, SOCK_STREAM,0)) <0)
         printf("\nerror creado el socket\n");
     port = atoi(argv[6]);
@@ -255,10 +263,46 @@ int main(int argc, char **argv) {
     }
 
 
-    printf("\n%d hilos creados \n",threadLength);
-
     if(port < 0 || port >60000)
         printf("\nerror, puerto invalido\n");
+
+    if(port ==21){
+        printf("220---------- Welcome to Pure-FTPd [privsep] [TLS] ----------\n");
+        printf("220-You are user number 1 of 50 allowed.\n");
+        printf("220-Local time is now ");
+        printf(ctime(&time));
+        printf("Server port: 21.\n");
+        printf("220 You will be disconnected after 15 minutes of inactivity.\n");
+
+    }
+    else if(port==22){
+        printf ("SSH-2.0-OpenSSH_6.2\n");
+    }
+    else if (port ==23){
+        printf ("login\n");
+    }
+    else if(port== 25){
+        printf ("220 localhost Microsoft ESMTP MAIL Service, Version: 5.0.2195.5329, ");
+        printf(ctime(&time));
+        printf("\n");
+
+    }
+    else if(port == 53){
+        printf("localhost:53 type A\n");
+
+    }
+    else if(port == 162){
+        printf ("snmpget -v 1 -c demopublic localhost system.sysUpTime.0\n");
+        printf ("system.sysUpTime.0 = Timeticks: (586731977) 67 days, ");
+        printf(ctime(&time));
+        printf("\n");
+    }
+
+    printf("\nCorriendo el webserver...\n");
+    printf("\n%d hilos creados \n",threadLength);
+
+
+
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(port);
@@ -267,7 +311,7 @@ int main(int argc, char **argv) {
     if( listen(listenfd,64) <0)
         printf("\nerror de listen\n");
     int available;
-    for(;;) {
+    for(;;) { // estar escuchando
         length = sizeof(cli_addr);
         if((socketfd = accept(listenfd, (struct sockaddr *)&cli_addr, &length)) < 0) {
             printf("\nerror de accept\n");
@@ -284,7 +328,7 @@ int main(int argc, char **argv) {
             if (available == -1) {
                 printf("\nNo hay hilos disponibles\n");
                 close(socketfd);
-                 exit(0);
+                exit(0);
             }
             else {
                 printf("\nSe empezo a utilizar el hilo: %d\n", available+1);
